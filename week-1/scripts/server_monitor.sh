@@ -1,10 +1,33 @@
 #!/usr/bin/env bash
 
+# Resolve the directory path
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
+LOG_DIR="${LOG_DIR:-$SCRIPT_DIR/../logs}"
+
+umask 077
+
+if ! mkdir -p -- "$LOG_DIR"; then
+	printf 'ERROR: Cannot create log directory: %s\n' "$LOG_DIR" >&2
+	exit 1
+fi
+
+LOG_FILE="${LOG_FILE:-$LOG_DIR/server-monitor-$(date +%F).log}"
+
+if ! touch -- "$LOG_FILE"; then
+	printf 'ERROR: Cannot write log file: %s\n' "$LOG_FILE" >&2
+	exit 1
+fi
+
+exec > >(tee -a "$LOG_FILE") 2>&1
+
+printf 'Log file: %s\n' "$LOG_FILE"
+
 set -u
 
 # Linux Server monitoring script
 
-printf "================================\n"
+printf "\n================================\n"
 printf "      Linux Server Monitor      \n"
 printf "================================\n"
 
