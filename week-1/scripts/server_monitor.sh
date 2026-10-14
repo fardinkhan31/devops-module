@@ -29,6 +29,8 @@ df -h /
 
 SERVICE_NAME="${1:-}"
 DISK_THRESHOLD="${DISK_THRESHOLD:-80}"
+MEMORY_THRESHOLD="${MEMORY_THRESHOLD:-85}"
+LOAD_PER_CORE_THRESHOLD="${LOAD_PER_CORE_THRESHOLD:-1.0}"
 failures=0
 skipped=0
 
@@ -113,6 +115,104 @@ check_disk_threshold() {
 	fi
 }
 
+check_memory_threshold() {
+	printf "\n=== Memory Threshold Check ===\n"
+
+	local total available usage
+
+	if [[ ! "$MEMORY_THRESHOLD" =~ ^[0-9]+$ ]] ||
+		(( 10#$MEMORY_THRESHOLD < 1 ||
+		10#$MEMORY_THRESHOLD > 100 )); then
+		echo "WARN: MEMORY_THRESHOLD must be an integer from 1 to 100"
+		failures=$((failures+1))
+		return
+	fi
+
+	if ! command -v free >/dev/null 2>&1; then
+		echo "SKIP: free command is unavailable"
+		skipped=$((skipped+1))
+		return
+	fi
+
+	read -r total available < <(
+		free -b | awk '/^Mem:/ {print $2, $7}'
+	)
+
+	if [[ ! "$total" =~ ^[0-9]+$ ||
+		! "$available" =~ ^[0-9]+$ ]] ||
+		(( total == 0 || available > total )); then
+		echo "WARN: Could not determine memory usage"
+		failures=$((failures + 1))
+		return
+	fi
+
+	usage=$(( (total - available) * 100 / total ))
+
+	printf 'Memory usage: %s%%\n' "$usage"
+	printf 'Configured threshold: %s%%\n' "$MEMORY_THRESHOLD"
+
+	if (( usage >= 10#$MEMORY_THRESHOLD )); then
+		echo "WARN: Memory usage reached threshold"
+		failures=$((failures+1))
+	else
+		echo "PASS: Memory usage is below threshold"
+	fi
+}
+
+
+check_load_threshold() {
+	printf '\n=== CPU Load Threshold Check ===\n'
+
+	local load cores ratio
+
+	if [[ ! -r /proc/loadavg ]] || ! command -v nproc >/dev/null 2>&1; then
+		echo "SKIP: Load information is unavailable"
+		skipped=$((skipped + 1))
+		return
+	fi
+
+	load=$(awk '{print $1}' /proc/loadavg)
+	cores=$(nproc)
+
+	if [[ ! "$load" =~ ^[0-9]+([.][0-9]+)?$ ]] ||
+	   [[ ! "$cores" =~ ^[0-9]+$ ]] ||
+	   (( cores < 1 )); then
+		echo "WARN: Could not determine CPU load"
+		failures=$((failures + 1))
+		return
+	fi
+
+	if ! awk -v t="$LOAD_PER_CORE_THRESHOLD" \
+		'BEGIN {
+			if (t ~ /^[0-9]+([.][0-9]+)?$/ && t >= 0) exit 0
+			exit 1
+		}'; then
+		echo 'WARN: LOAD_PER_CORE_THRESHOLD must be a non-negative number'
+		failures=$((failures + 1))
+		return
+	fi
+
+	ratio=$(awk -v l="$load" -v c="$cores" \
+		'BEGIN { printf "%.2f", l / c}')
+
+	printf '1-minute load average: %s\n' "$load"
+	printf 'Available CPU cores: %s\n' "$cores"
+	printf 'Load per core: %s\n' "$ratio"
+	printf 'Configured threshold: %s\n' "$LOAD_PER_CORE_THRESHOLD"
+
+	if awk -v l="$load" -v c="$cores" -v t="$LOAD_PER_CORE_THRESHOLD" \
+		'BEGIN { exit !((l / c) >= t ) }'; then
+		echo "WARN: CPU load per core reached threshold"
+		failures=$((failures + 1))
+	else
+		echo "PASS: CPU Load per core is below threshold"
+	fi
+
+}
+
+
+check_load_threshold
+check_memory_threshold
 check_disk_threshold
 check_connectivity
 check_service
