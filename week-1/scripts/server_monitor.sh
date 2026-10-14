@@ -88,8 +88,32 @@ check_service() {
 
 }
 
+check_disk_threshold() {
+	printf '\n=== Disk Threshold Check ===\n'
 
+	local usage
 
+	usage=$(df -P / | awk 'NR == 2 {
+		gsub(/%/, "", $5)
+		print $5
+	}')
+
+	if [[ ! "$DISK_THRESHOLD" =~ ^[0-9]+$ ]] ||
+		(( 10#$DISK_THRESHOLD < 1 || 10#$DISK_THRESHOLD > 100)); then
+		echo "WARN: DISK_THRESHOLD must be an integer between 1 to 100"
+		failures=$((failures+1))
+		return
+	fi
+
+	if  (( usage >= DISK_THRESHOLD )); then
+		echo "WARN: Root filesystem usage reached threshold"
+		failures=$((failures+1))
+	else
+		echo "PASS: Root filesystem usage is below threshold"
+	fi
+}
+
+check_disk_threshold
 check_connectivity
 check_service
 
