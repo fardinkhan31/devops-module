@@ -1,14 +1,23 @@
 #!/usr/bin/env bash
 
+set -u
+
 # Resolve the directory path
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 LOG_DIR="${LOG_DIR:-$SCRIPT_DIR/../logs}"
+LOG_RETENTION_DAYS="${LOG_RETENTION_DAYS:-14}"
 
 umask 077
 
 if ! mkdir -p -- "$LOG_DIR"; then
 	printf 'ERROR: Cannot create log directory: %s\n' "$LOG_DIR" >&2
+	exit 1
+fi
+
+if [[ ! "$LOG_RETENTION_DAYS" =~ ^[0-9]+$ ]] ||
+	(( 10#$LOG_RETENTION_DAYS < 1 || 10#$LOG_RETENTION_DAYS > 3560 )); then
+	printf "ERROR: LOG_RETENTION_DAYS must be from 1 to 3650\n" >&2
 	exit 1
 fi
 
@@ -19,11 +28,21 @@ if ! touch -- "$LOG_FILE"; then
 	exit 1
 fi
 
+if ! chmod 600 -- "$LOG_FILE"; then
+	printf 'ERROR: Cannot set log file permissions\n' >&2
+	exit 1
+fi
+
 exec > >(tee -a "$LOG_FILE") 2>&1
 
-printf 'Log file: %s\n' "$LOG_FILE"
+printf 'Log retention: %s days\n' "$LOG_RETENTION_DAYS"
 
-set -u
+if ! find "$LOG_DIR" -maxdepth 1 -type f -name 'server-monitor-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9].log' \
+	-mmin "+$((LOG_RETENTION_DAYS * 1440))" -print -delete; then
+	echo "WARN: Log retention cleanup did not complete successfully"
+fi
+
+printf 'Log file: %s\n' "$LOG_FILE"
 
 # Linux Server monitoring script
 
@@ -57,6 +76,17 @@ LOAD_PER_CORE_THRESHOLD="${LOAD_PER_CORE_THRESHOLD:-1.0}"
 failures=0
 skipped=0
 
+
+send_alert() {
+
+	local component="$1"
+	local message="$2"
+	local action="$3"
+
+	printf '\nALERT [%s] %s\n' "$component" "$message"
+	printf 'ACTION: %s\n' "$action"
+}
+
 check_connectivity() {
 	printf "\n=== HTTPS Connectivity ===\n"
 
@@ -66,7 +96,8 @@ check_connectivity() {
 	elif curl -fsS --connect-timeout 3 --max-time 8 https://www.google.com -o /dev/null; then
 		echo "PASS: HTTPS connectivity"
 	else
-		echo "WARN: HTTPS connectivity check failed"
+		# echo "WARN: HTTPS connectivity check failed"
+		send_alert "CONNECTIVITY" "HTTP connectivity check failed" "Inspect connectivity usage with curl -I <url>"
 		failures=$((failures + 1))
 	fi
 }
@@ -123,6 +154,12 @@ check_disk_threshold() {
 		print $5
 	}')
 
+	if [[ ! "$usage" =~ ^[0-9]+$ ]]; then
+		echo "WARN: Could not determine root filesystem usage"
+		failures=$((failures+1))
+		return
+	fi
+
 	if [[ ! "$DISK_THRESHOLD" =~ ^[0-9]+$ ]] ||
 		(( 10#$DISK_THRESHOLD < 1 || 10#$DISK_THRESHOLD > 100)); then
 		echo "WARN: DISK_THRESHOLD must be an integer between 1 to 100"
@@ -131,7 +168,10 @@ check_disk_threshold() {
 	fi
 
 	if  (( usage >= DISK_THRESHOLD )); then
-		echo "WARN: Root filesystem usage reached threshold"
+		# echo "WARN: Root filesystem usage reached threshold"
+		send_alert "DISK" \
+		    "Root filesystem usage is ${usage}% (threshold: ${DISK_THRESHOLD}%)." \
+		    "Run df -h / and investigate large files before deleting anything."
 		failures=$((failures+1))
 	else
 		echo "PASS: Root filesystem usage is below threshold"
@@ -175,7 +215,8 @@ check_memory_threshold() {
 	printf 'Configured threshold: %s%%\n' "$MEMORY_THRESHOLD"
 
 	if (( usage >= 10#$MEMORY_THRESHOLD )); then
-		echo "WARN: Memory usage reached threshold"
+		# echo "WARN: Memory usage reached threshold"
+		send_alert "MEMORY" "Memory usage is ${usage}% (threshold: ${MEMORY_THRESHOLD}%)." "Inspect free -h and identify memory-heavy processes before taking action."
 		failures=$((failures+1))
 	else
 		echo "PASS: Memory usage is below threshold"
@@ -225,14 +266,14 @@ check_load_threshold() {
 
 	if awk -v l="$load" -v c="$cores" -v t="$LOAD_PER_CORE_THRESHOLD" \
 		'BEGIN { exit !((l / c) >= t ) }'; then
-		echo "WARN: CPU load per core reached threshold"
+		# echo "WARN: CPU load per core reached threshold"
+		send_alert "CPU LOAD" "Load per core is ${ratio} (threshold: ${LOAD_PER_CORE_THRESHOLD})." "Inspect uptime and top; investigate CPU-heavy prcesses and I/O waits."
 		failures=$((failures + 1))
 	else
 		echo "PASS: CPU Load per core is below threshold"
 	fi
 
 }
-
 
 check_load_threshold
 check_memory_threshold
