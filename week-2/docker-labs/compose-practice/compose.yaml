@@ -1,0 +1,18 @@
+services:
+  api:
+    #api configuration
+    build: .
+    ports:
+      - 3000:3000
+    environment:
+      MONGODB_URI: mongodb://mongo:27017/compose-db
+  mongo:
+    #mongodb configuration
+    image: mongo:8.0
+    environment:
+      MONGO_INITDB_DATABASE: compose-db
+    volumes:
+      - compose-db:/data/db
+volumes:
+  #volume configuration
+  compose-db:
