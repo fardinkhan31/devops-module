@@ -29,10 +29,10 @@ services:
         - --quiet
         - --eval
         - "db.adminCommand('ping').ok"
-        interval: 5s
-        timeout: 3s
-        retries: 10
-        start_period: 10s
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
 
-  volumes:
-   mongo-data:
+volumes:
+  mongo-data:
