@@ -1,0 +1,11 @@
+name: pulumi-vpc
+description: A minimal python Pulumi program for creating VPC
+runtime:
+  name: python
+  options:
+    toolchain: pip
+    virtualenv: venv
+config:
+  pulumi:tags:
+    value:
+      pulumi:template: aws-python
