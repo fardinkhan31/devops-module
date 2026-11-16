@@ -1,0 +1,26 @@
+stages:
+  - build
+  - test
+  - deploy
+
+build-stage:
+  stage: build
+  script:
+    - echo "Building Project..."
+
+test-stage:
+  stage: test
+
+  before_script:
+    - echo "Preparing test environment"
+
+  script:
+    - echo "Running Tests..."
+
+  after_script:
+    - echo "Testing completed."   #runs even if the main job fails
+
+deploy-stage:
+  stage: deploy
+  script:
+    - echo "Deploying to Prod..."

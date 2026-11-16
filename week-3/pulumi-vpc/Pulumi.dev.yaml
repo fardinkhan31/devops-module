@@ -1,2 +1,5 @@
 config:
   aws:region: ap-southeast-2
+  pulumi-vpc:dbUsername: pulumiadmin
+  pulumi-vpc:dbPassword:
+    secure: AAABADZUsL4vWGvlvnLJ/JSROcukGPfDCIEeSBeXYBmV2G3OUK4xojdjbdR9+Rw=
