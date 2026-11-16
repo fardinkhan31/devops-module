@@ -3,24 +3,26 @@ stages:
   - test
   - deploy
 
-build-stage:
+variables:
+  APP_NAME: "custom-api"
+
+build_stage:
   stage: build
+  image: node:22
   script:
-    - echo "Building Project..."
+    - npm ci
+    - npm run build
 
-test-stage:
+test_stage:
   stage: test
-
-  before_script:
-    - echo "Preparing test environment"
-
+  image: node:22
   script:
-    - echo "Running Tests..."
+    - npm ci
+    - npm test
 
-  after_script:
-    - echo "Testing completed."   #runs even if the main job fails
-
-deploy-stage:
+deploy_stage:
   stage: deploy
+  image: node:22
   script:
-    - echo "Deploying to Prod..."
+    - npm ci
+    - npm run build
